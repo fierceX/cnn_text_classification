@@ -1,1 +1,2 @@
 # cnn_text_classification
+使用CNN进行文本分类，参考官方示例，修改成gluon接口
