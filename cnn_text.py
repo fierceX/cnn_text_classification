@@ -5,6 +5,7 @@ from mxnet import nd
 from mxnet import ndarray as nd
 from mxnet import autograd
 from data_helpers import *
+import pandas as pd
 
 
 class ConvConcat(nn.HybridBlock):
@@ -52,7 +53,7 @@ def accuracy(output, label):
     return np.mean(output.argmax(axis=1)==label)
 
 def GetData():
-    train = pd.read_csv('./labeledTrainData.tsv/labeledTrainData.tsv', header=0, delimiter="\t", quoting=3)
+    train = pd.read_csv('./labeledTrainData.tsv', header=0, delimiter="\t", quoting=3)
     labels = train['sentiment']
     sentences = []
     for i in range(len(train['review'])):
@@ -74,8 +75,8 @@ def GetData():
     x_train, x_dev = x_shuffled[:-1000], x_shuffled[-1000:]
     y_train, y_dev = y_shuffled[:-1000], y_shuffled[-1000:]
 
-    train_data = gluon.data.DataLoader(gluon.data.ArrayDataset(x_train,y_train), batch_size=128,shuffle=True)
-    valid_data = gluon.data.DataLoader(gluon.data.ArrayDataset(x_dev,y_dev), batch_size=128,shuffle=True)
+    train_data = gluon.data.DataLoader(gluon.data.ArrayDataset(x_train,y_train), batch_size=64,shuffle=True)
+    valid_data = gluon.data.DataLoader(gluon.data.ArrayDataset(x_dev,y_dev), batch_size=64,shuffle=True)
     return train_data,valid_data,embed_size,sentence_size,vocab_size
 
 train_data,valid_data,embed_size,sentence_size,vocab_size = GetData()
@@ -86,7 +87,7 @@ with net.name_scope():
     net.add(ReshapeInput(sentence_size,300))
     net.add(ConvConcat(sentence_size,300))
     net.add(nn.Dense(2))
-net.initialize()
+net.initialize(ctx = mx.gpu())
 net.hybridize()
 
 softmax_cross_entropy = gluon.loss.SoftmaxCrossEntropyLoss()
@@ -97,10 +98,10 @@ for epoch in range(5):
     train_acc = 0.
     for i,(data, label) in enumerate(train_data):
         with autograd.record():
-            output = net(data)
-            loss = softmax_cross_entropy(output, label.astype('float32'))
+            output = net(data.as_in_context(mx.gpu()))
+            loss = softmax_cross_entropy(output, label.astype('float32').as_in_context(mx.gpu()))
         loss.backward()
-        trainer.step(128)
+        trainer.step(64)
         
         
         _loss = nd.mean(loss).asscalar()
@@ -109,7 +110,9 @@ for epoch in range(5):
         train_acc += _acc
 
         if i % 20 == 0:
-             print("Loss: %f, Train acc %f" % (train_loss/(i+1), train_loss/(i+1)))
+             print("Loss: %f, Train acc %f" % (train_loss/(i+1), train_acc/(i+1)))
 
     print("Epoch %d. Loss: %f, Train acc %f" % (
         epoch, train_loss/len(train_data), train_acc/len(train_data)))
+
+net.save_params('aaa.panrams')
