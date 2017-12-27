@@ -52,6 +52,13 @@ class ReshapeInput(nn.HybridBlock):
 def accuracy(output, label):
     return np.mean(output.argmax(axis=1)==label)
 
+def get_valid_acc(net,valid):
+    valid_acc = 0.
+    for data,label in valid:
+        output = net(data.as_in_context(mx.gpu()))
+        valid_acc +=accuracy(nd.softmax(output).asnumpy(),label.asnumpy())
+    return valid_acc/len(valid)
+
 def GetData():
     train = pd.read_csv('./labeledTrainData.tsv', header=0, delimiter="\t", quoting=3)
     labels = train['sentiment']
@@ -88,6 +95,7 @@ with net.name_scope():
     net.add(ConvConcat(sentence_size,300))
     net.add(nn.Dense(2))
 net.initialize(ctx = mx.gpu())
+# net.load_params('net.params',ctx=mx.gpu())
 net.hybridize()
 
 softmax_cross_entropy = gluon.loss.SoftmaxCrossEntropyLoss()
@@ -96,23 +104,24 @@ trainer = gluon.Trainer(net.collect_params(), 'Adam')
 for epoch in range(5):
     train_loss = 0.
     train_acc = 0.
+    valid_acc = 0.
     for i,(data, label) in enumerate(train_data):
         with autograd.record():
             output = net(data.as_in_context(mx.gpu()))
             loss = softmax_cross_entropy(output, label.astype('float32').as_in_context(mx.gpu()))
         loss.backward()
         trainer.step(64)
-        
-        
+
         _loss = nd.mean(loss).asscalar()
         train_loss += _loss
-        _acc = accuracy(nd.sigmoid(output).asnumpy(), label.asnumpy())
+        _acc = accuracy(nd.softmax(output).asnumpy(), label.asnumpy())
         train_acc += _acc
 
         if i % 20 == 0:
-             print("Loss: %f, Train acc %f" % (train_loss/(i+1), train_acc/(i+1)))
+            valid_acc = get_valid_acc(net,valid_data)
+            print("Loss: %f, Train acc %f Valid acc %f" % (train_loss/(i+1), train_acc/(i+1),valid_acc))
 
-    print("Epoch %d. Loss: %f, Train acc %f" % (
+    print("Epoch %d. Loss: %f, Train acc %f Valid acc %f" % (
         epoch, train_loss/len(train_data), train_acc/len(train_data)))
 
-net.save_params('aaa.panrams')
+net.save_params('net.params')
